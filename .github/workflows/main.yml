@@ -136,6 +136,7 @@ jobs:
           PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
           PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
           LOGS_WEBHOOK_URL: ${{ secrets.LOGS_WEBHOOK_URL }}
+          GOOGLE_AUTH_SECRET: ${{ secrets.GOOGLE_AUTH_SECRET }}
           PYTHONUNBUFFERED: 1
           GITHUB_ACTIONS: true
         run: |
