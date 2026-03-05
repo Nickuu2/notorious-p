@@ -102,12 +102,14 @@ jobs:
         run: |
           echo "$AUTH_STATE_JSON" > auth_state.json
 
-      - name: Restore & Decrypt Persistent Data
+      - name: Restore & Decrypt Persistent Data & Profile Cache
         if: steps.check_skip.outputs.should_skip != 'true' && steps.checkpause.outputs.paused != 'true'
         uses: actions/cache/restore@v4
         id: cache-restore
         with:
-          path: worker_data.json.gpg
+          path: |
+            worker_data.json.gpg
+            playwright_user_data.tar.gz.gpg
           key: persistent-data-v1-${{ github.run_number }}
           restore-keys: |
             persistent-data-v1-
@@ -120,7 +122,16 @@ jobs:
             --output worker_data.json worker_data.json.gpg
             echo "✅ Decrypted persistent data"
           else
-            echo "ℹ️ No encrypted data file found - starting fresh"
+            echo "ℹ️ No encrypted data file found - starting fresh config"
+          fi
+          
+          if [ -f playwright_user_data.tar.gz.gpg ]; then
+            gpg --quiet --batch --yes --decrypt --passphrase "$GPG_PASSPHRASE" \
+            --output playwright_user_data.tar.gz playwright_user_data.tar.gz.gpg
+            tar -xzf playwright_user_data.tar.gz
+            echo "✅ Decrypted and restored browser profile"
+          else
+            echo "ℹ️ No encrypted browser profile found - starting cold browser"
           fi
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
@@ -213,10 +224,18 @@ jobs:
             gpg --quiet --batch --yes --symmetric --passphrase "$GPG_PASSPHRASE" \
             --output worker_data.json.gpg worker_data.json
           fi
+          
+          if [ -d playwright_user_data ]; then
+            tar -czf playwright_user_data.tar.gz playwright_user_data/
+            gpg --quiet --batch --yes --symmetric --passphrase "$GPG_PASSPHRASE" \
+            --output playwright_user_data.tar.gz.gpg playwright_user_data.tar.gz
+          fi
 
       - name: Save Cache
         if: steps.check_skip.outputs.should_skip != 'true' && steps.checkpause.outputs.paused != 'true'
         uses: actions/cache/save@v4
         with:
-          path: worker_data.json.gpg
+          path: |
+            worker_data.json.gpg
+            playwright_user_data.tar.gz.gpg
           key: persistent-data-v1-${{ github.run_number }}
