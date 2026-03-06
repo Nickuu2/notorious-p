@@ -109,7 +109,7 @@ jobs:
         with:
           path: |
             worker_data.json.gpg
-            playwright_user_data.tar.gz.gpg
+            playwright_user_data.zip.gpg
           key: persistent-data-v1-${{ github.run_number }}
           restore-keys: |
             persistent-data-v1-
@@ -125,10 +125,10 @@ jobs:
             echo "ℹ️ No encrypted data file found - starting fresh config"
           fi
           
-          if [ -f playwright_user_data.tar.gz.gpg ]; then
+          if [ -f playwright_user_data.zip.gpg ]; then
             gpg --quiet --batch --yes --decrypt --passphrase "$GPG_PASSPHRASE" \
-            --output playwright_user_data.tar.gz playwright_user_data.tar.gz.gpg
-            tar -xzf playwright_user_data.tar.gz
+            --output playwright_user_data.zip playwright_user_data.zip.gpg
+            unzip -q playwright_user_data.zip
             echo "✅ Decrypted and restored browser profile"
           else
             echo "ℹ️ No encrypted browser profile found - starting cold browser"
@@ -226,9 +226,10 @@ jobs:
           fi
           
           if [ -d playwright_user_data ]; then
-            tar -czf playwright_user_data.tar.gz playwright_user_data/
+            zip -r -q playwright_user_data.zip playwright_user_data/
             gpg --quiet --batch --yes --symmetric --passphrase "$GPG_PASSPHRASE" \
-            --output playwright_user_data.tar.gz.gpg playwright_user_data.tar.gz
+            --output playwright_user_data.zip.gpg playwright_user_data.zip
+            echo "✅ Encrypted and prepared browser profile for cache"
           fi
 
       - name: Save Cache
@@ -237,5 +238,5 @@ jobs:
         with:
           path: |
             worker_data.json.gpg
-            playwright_user_data.tar.gz.gpg
+            playwright_user_data.zip.gpg
           key: persistent-data-v1-${{ github.run_number }}
