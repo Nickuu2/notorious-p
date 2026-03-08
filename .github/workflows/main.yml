@@ -148,9 +148,8 @@ jobs:
           PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
           LOGS_WEBHOOK_URL: ${{ secrets.LOGS_WEBHOOK_URL }}
           GOOGLE_AUTH_SECRET: ${{ secrets.GOOGLE_AUTH_SECRET }}
-          AUTH_MODE: ${{ secrets.AUTH_MODE }}
-          DETAILED_DISCORD_LOGS: ${{ secrets.DETAILED_DISCORD_LOGS }}
-          PRESET_CURRENCY: ${{ secrets.PRESET_CURRENCY }}
+          SITE_USERNAME: ${{ secrets.SITE_USERNAME }}
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
           PYTHONUNBUFFERED: 1
           GITHUB_ACTIONS: true
         run: |
