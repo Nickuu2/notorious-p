@@ -35,7 +35,7 @@ jobs:
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
-          path: ~/.cache/ms-playwright
+          path: ~/AppData/Local/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
           restore-keys: |
             playwright-${{ runner.os }}-
@@ -154,6 +154,7 @@ jobs:
           SITE_USERNAME: ${{ secrets.SITE_USERNAME }}
           SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
           PYTHONUNBUFFERED: 1
+          PYTHONIOENCODING: 'utf-8'
           GITHUB_ACTIONS: true
         run: |
           python notorious.py || true
