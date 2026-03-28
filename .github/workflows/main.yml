@@ -11,7 +11,10 @@ concurrency:
 
 jobs:
   run-linux:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     permissions:
       actions: write
       contents: read
