@@ -184,22 +184,8 @@ jobs:
                   f.write(f'status={status}\nreason={reason}\nwait_hours={wait_hours}\n')
           PY
 
-      - name: Notify Discord (limited)
-        if: steps.check_skip.outputs.should_skip != 'true' && steps.checkpause.outputs.paused != 'true' && steps.parse.outputs.reason != 'none' && steps.parse.outputs.reason != 'cookie_expired' && steps.parse.outputs.reason != 'no_valuebets'
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          msg="Worker run entered sleep due to: ${{ steps.parse.outputs.reason }}. Waiting ${{ steps.parse.outputs.wait_hours }} hours."
-          curl -H "Content-Type: application/json" -d "{\"content\": \"$msg\"}" "$DISCORD_WEBHOOK_URL"
 
-      - name: Notify Discord (cookie expired)
-        if: steps.check_skip.outputs.should_skip != 'true' && steps.checkpause.outputs.paused != 'true' && steps.parse.outputs.reason == 'cookie_expired'
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          curl -H "Content-Type: application/json" -d "{\"content\": \"Cookie expired\"}" "$DISCORD_WEBHOOK_URL"
 
-      
 
       - name: Update pause window (limited)
         if: steps.check_skip.outputs.should_skip != 'true' && steps.checkpause.outputs.paused != 'true' && steps.parse.outputs.status == 'limited_sleep'
@@ -267,37 +253,53 @@ jobs:
 
       - name: Log run outcome to Discord (LOGS_WEBHOOK_URL)
         if: always() && steps.check_skip.outputs.should_skip != 'true' && steps.checkpause.outputs.paused != 'true'
+        continue-on-error: true
         env:
           LOGS_WEBHOOK_URL: ${{ secrets.LOGS_WEBHOOK_URL }}
+          RUN_STATUS: ${{ steps.parse.outputs.status }}
+          RUN_REASON: ${{ steps.parse.outputs.reason }}
+          WAIT_HOURS: ${{ steps.parse.outputs.wait_hours }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          STATUS="${{ steps.parse.outputs.status }}"
-          REASON="${{ steps.parse.outputs.reason }}"
-          WAIT_H="${{ steps.parse.outputs.wait_hours }}"
-          RUN_NUM="${{ github.run_number }}"
-          if [ -z "$STATUS" ] || [ "$STATUS" = "" ]; then STATUS="unknown"; fi
-          if [ -z "$REASON" ] || [ "$REASON" = "" ]; then REASON="unknown"; fi
-          if [ "$STATUS" = "completed" ]; then
-            ICON="✅"
-          elif [ "$STATUS" = "limited_sleep" ]; then
-            ICON="🚫"
-          else
-            ICON="⚠️"
-          fi
-          MSG="${ICON} Run #${RUN_NUM} finished | Status: ${STATUS} | Reason: ${REASON}"
-          if [ "$STATUS" = "limited_sleep" ] && [ -n "$WAIT_H" ] && [ "$WAIT_H" != "0" ]; then
-            MSG="${MSG} | ⏸️ Pausing for ${WAIT_H}h"
-          fi
-          curl -s -H "Content-Type: application/json" \
-            -d "{\"content\": \"${MSG}\"}" \
-            "$LOGS_WEBHOOK_URL" || true
+          python - <<'PY'
+          import os, requests
+          url = os.environ.get('LOGS_WEBHOOK_URL', '').strip()
+          if not url:
+              print('LOGS_WEBHOOK_URL not set — skipping Discord notification.')
+              exit(0)
+          status  = os.environ.get('RUN_STATUS',  'unknown').strip() or 'unknown'
+          reason  = os.environ.get('RUN_REASON',  'unknown').strip() or 'unknown'
+          wait_h  = os.environ.get('WAIT_HOURS',  '0').strip() or '0'
+          run_num = os.environ.get('RUN_NUMBER',  '?').strip()
+          icon = '✅' if status == 'completed' else ('🚫' if status == 'limited_sleep' else '⚠️')
+          msg = f'{icon} Run #{run_num} finished | Status: {status} | Reason: {reason}'
+          if status == 'limited_sleep' and wait_h not in ('0', '', 'none'):
+              msg += f' | ⏸️ Pausing for {wait_h}h'
+          try:
+              r = requests.post(url, json={'content': msg}, timeout=10)
+              print(f'Discord notified: {r.status_code}')
+          except Exception as e:
+              print(f'Discord notify failed (non-fatal): {e}')
+          PY
 
       - name: Log paused run to Discord (LOGS_WEBHOOK_URL)
         if: always() && steps.checkpause.outputs.paused == 'true'
+        continue-on-error: true
         env:
           LOGS_WEBHOOK_URL: ${{ secrets.LOGS_WEBHOOK_URL }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          RUN_NUM="${{ github.run_number }}"
-          MSG="⏸️ Run #${RUN_NUM} skipped — still within pause window (PAUSE_UNTIL not elapsed)."
-          curl -s -H "Content-Type: application/json" \
-            -d "{\"content\": \"${MSG}\"}" \
-            "$LOGS_WEBHOOK_URL" || true
+          python - <<'PY'
+          import os, requests
+          url = os.environ.get('LOGS_WEBHOOK_URL', '').strip()
+          if not url:
+              print('LOGS_WEBHOOK_URL not set — skipping Discord notification.')
+              exit(0)
+          run_num = os.environ.get('RUN_NUMBER', '?').strip()
+          msg = f'⏸️ Run #{run_num} skipped — still within pause window (PAUSE_UNTIL not elapsed).'
+          try:
+              r = requests.post(url, json={'content': msg}, timeout=10)
+              print(f'Discord notified: {r.status_code}')
+          except Exception as e:
+              print(f'Discord notify failed (non-fatal): {e}')
+          PY
