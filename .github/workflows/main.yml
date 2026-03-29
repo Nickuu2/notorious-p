@@ -204,7 +204,7 @@ jobs:
       - name: Update pause window (limited)
         if: steps.check_skip.outputs.should_skip != 'true' && steps.checkpause.outputs.paused != 'true' && steps.parse.outputs.status == 'limited_sleep'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
         run: |
           python - <<'PY'
           import os, time, requests
@@ -218,8 +218,9 @@ jobs:
           token = os.environ['GH_TOKEN']
           owner, repo = os.environ['GITHUB_REPOSITORY'].split('/')
           hours = float('${{ steps.parse.outputs.wait_hours }}' or '12')
-          pause_until = str(int(time.time()) + hours * 3600)
+          pause_until = str(int(time.time()) + int(hours * 3600))
           set_var(token, owner, repo, 'PAUSE_UNTIL', pause_until)
+          print(f'✅ PAUSE_UNTIL set to {pause_until} ({hours}h from now)')
           PY
       - name: Encrypt & Save Cache
         if: steps.check_skip.outputs.should_skip != 'true' && steps.checkpause.outputs.paused != 'true'
@@ -263,3 +264,40 @@ jobs:
             echo "Deleting old cache ID $cache_id..."
             gh api --method DELETE -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" repos/${{ github.repository }}/actions/caches/$cache_id || true
           done
+
+      - name: Log run outcome to Discord (LOGS_WEBHOOK_URL)
+        if: always() && steps.check_skip.outputs.should_skip != 'true' && steps.checkpause.outputs.paused != 'true'
+        env:
+          LOGS_WEBHOOK_URL: ${{ secrets.LOGS_WEBHOOK_URL }}
+        run: |
+          STATUS="${{ steps.parse.outputs.status }}"
+          REASON="${{ steps.parse.outputs.reason }}"
+          WAIT_H="${{ steps.parse.outputs.wait_hours }}"
+          RUN_NUM="${{ github.run_number }}"
+          if [ -z "$STATUS" ] || [ "$STATUS" = "" ]; then STATUS="unknown"; fi
+          if [ -z "$REASON" ] || [ "$REASON" = "" ]; then REASON="unknown"; fi
+          if [ "$STATUS" = "completed" ]; then
+            ICON="✅"
+          elif [ "$STATUS" = "limited_sleep" ]; then
+            ICON="🚫"
+          else
+            ICON="⚠️"
+          fi
+          MSG="${ICON} Run #${RUN_NUM} finished | Status: ${STATUS} | Reason: ${REASON}"
+          if [ "$STATUS" = "limited_sleep" ] && [ -n "$WAIT_H" ] && [ "$WAIT_H" != "0" ]; then
+            MSG="${MSG} | ⏸️ Pausing for ${WAIT_H}h"
+          fi
+          curl -s -H "Content-Type: application/json" \
+            -d "{\"content\": \"${MSG}\"}" \
+            "$LOGS_WEBHOOK_URL" || true
+
+      - name: Log paused run to Discord (LOGS_WEBHOOK_URL)
+        if: always() && steps.checkpause.outputs.paused == 'true'
+        env:
+          LOGS_WEBHOOK_URL: ${{ secrets.LOGS_WEBHOOK_URL }}
+        run: |
+          RUN_NUM="${{ github.run_number }}"
+          MSG="⏸️ Run #${RUN_NUM} skipped — still within pause window (PAUSE_UNTIL not elapsed)."
+          curl -s -H "Content-Type: application/json" \
+            -d "{\"content\": \"${MSG}\"}" \
+            "$LOGS_WEBHOOK_URL" || true
