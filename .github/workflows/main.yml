@@ -141,6 +141,7 @@ jobs:
 
       - name: Run Worker Script
         if: steps.check_skip.outputs.should_skip != 'true' && steps.checkpause.outputs.paused != 'true'
+        id: run_worker
         env:
           # Only set CI-specific variables and secrets - let .env control the rest
           AUTH_STATE_FILE: '${{ github.workspace }}/auth_state.json'
@@ -210,16 +211,25 @@ jobs:
           PY
       - name: Encrypt & Save Cache
         if: steps.check_skip.outputs.should_skip != 'true' && steps.checkpause.outputs.paused != 'true'
+        id: encrypt_cache
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           if [ -f worker_data.json ]; then
             gpg --quiet --batch --yes --symmetric --passphrase "$GPG_PASSPHRASE" \
             --output worker_data.json.gpg worker_data.json
+            echo "✅ Encrypted worker_data.json"
           fi
-          
+
           if [ -d playwright_user_data ]; then
-            zip -r -q playwright_user_data.zip playwright_user_data/
+            python - <<'PY'
+          import zipfile, os, pathlib
+          src = pathlib.Path('playwright_user_data')
+          with zipfile.ZipFile('playwright_user_data.zip', 'w', zipfile.ZIP_DEFLATED) as zf:
+              for f in src.rglob('*'):
+                  zf.write(f, f.relative_to(src.parent))
+          print('✅ playwright_user_data zipped via Python')
+          PY
             gpg --quiet --batch --yes --symmetric --passphrase "$GPG_PASSPHRASE" \
             --output playwright_user_data.zip.gpg playwright_user_data.zip
             echo "✅ Encrypted and prepared browser profile for cache"
@@ -260,6 +270,9 @@ jobs:
           RUN_REASON: ${{ steps.parse.outputs.reason }}
           WAIT_HOURS: ${{ steps.parse.outputs.wait_hours }}
           RUN_NUMBER: ${{ github.run_number }}
+          JOB_STATUS: ${{ job.status }}
+          STEP_ENCRYPT: ${{ steps.encrypt_cache.outcome }}
+          STEP_WORKER: ${{ steps.run_worker.outcome }}
         run: |
           python - <<'PY'
           import os, requests
@@ -267,17 +280,43 @@ jobs:
           if not url:
               print('LOGS_WEBHOOK_URL not set — skipping Discord notification.')
               exit(0)
-          status  = os.environ.get('RUN_STATUS',  'unknown').strip() or 'unknown'
-          reason  = os.environ.get('RUN_REASON',  'unknown').strip() or 'unknown'
-          wait_h  = os.environ.get('WAIT_HOURS',  '0').strip() or '0'
-          run_num = os.environ.get('RUN_NUMBER',  '?').strip()
-          icon = '✅' if status == 'completed' else ('🚫' if status == 'limited_sleep' else '⚠️')
-          msg = f'{icon} Run #{run_num} finished | Status: {status} | Reason: {reason}'
-          if status == 'limited_sleep' and wait_h not in ('0', '', 'none'):
-              msg += f' | ⏸️ Pausing for {wait_h}h'
+          script_status = os.environ.get('RUN_STATUS',  'unknown').strip() or 'unknown'
+          reason        = os.environ.get('RUN_REASON',  'unknown').strip() or 'unknown'
+          wait_h        = os.environ.get('WAIT_HOURS',  '0').strip() or '0'
+          run_num       = os.environ.get('RUN_NUMBER',  '?').strip()
+          job_status    = os.environ.get('JOB_STATUS',  'unknown').strip()
+          step_encrypt  = os.environ.get('STEP_ENCRYPT', '').strip()
+          step_worker   = os.environ.get('STEP_WORKER',  '').strip()
+
+          # Detect workflow-level failures (steps that errored regardless of script outcome)
+          failed_steps = []
+          if step_encrypt and step_encrypt not in ('success', 'skipped'):
+              failed_steps.append(f'encrypt_cache={step_encrypt}')
+          if step_worker and step_worker not in ('success', 'skipped'):
+              failed_steps.append(f'worker_script={step_worker}')
+
+          if failed_steps or job_status not in ('success', 'cancelled'):
+              # Workflow-level error — report this loudly regardless of script status
+              icon = '🔴'
+              failures_str = ', '.join(failed_steps) if failed_steps else f'job={job_status}'
+              msg = (f'{icon} Run #{run_num} — WORKFLOW ERROR | '
+                     f'Failed steps: {failures_str} | '
+                     f'Script status: {script_status} | Reason: {reason}')
+          elif script_status == 'completed':
+              icon = '✅'
+              msg = f'{icon} Run #{run_num} finished | Status: {script_status} | Reason: {reason}'
+          elif script_status == 'limited_sleep':
+              icon = '🚫'
+              msg = f'{icon} Run #{run_num} sleeping | Reason: {reason}'
+              if wait_h not in ('0', '', 'none'):
+                  msg += f' | ⏸️ Pausing for {wait_h}h'
+          else:
+              icon = '⚠️'
+              msg = f'{icon} Run #{run_num} finished | Status: {script_status} | Reason: {reason}'
+
           try:
               r = requests.post(url, json={'content': msg}, timeout=10)
-              print(f'Discord notified: {r.status_code}')
+              print(f'Discord notified: {r.status_code} — {msg}')
           except Exception as e:
               print(f'Discord notify failed (non-fatal): {e}')
           PY
