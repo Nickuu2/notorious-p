@@ -12,6 +12,8 @@ concurrency:
 jobs:
   run-linux:
     runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: 'utf-8'
     defaults:
       run:
         shell: bash
