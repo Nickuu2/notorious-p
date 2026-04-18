@@ -307,8 +307,8 @@ jobs:
                      f'Failed steps: {failures_str} | '
                      f'Script status: {script_status} | Reason: {reason}')
           elif script_status == 'completed':
-              icon = '✅'
-              msg = f'{icon} Run #{run_num} finished | Status: {script_status} | Reason: {reason}'
+              print('Script completed successfully. Skipping Discord log to reduce noise.')
+              exit(0)
           elif script_status == 'limited_sleep':
               icon = '🚫'
               msg = f'{icon} Run #{run_num} sleeping | Reason: {reason}'
