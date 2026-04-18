@@ -258,7 +258,7 @@ jobs:
           
           # Delete caches created more than 2 days ago (172800 seconds)
           # We use split(".")[0] + "Z" to strip fractional seconds which cause jq fromdateiso8601 to fail
-          jq -r '.actions_caches[]? | select((.created_at | split(".")[0] + "Z" | fromdateiso8601) < (now - 172800)) | .id' caches.json | while read cache_id; do
+          jq -r '.actions_caches[]? | select((.created_at | split(".")[0] + "Z" | fromdateiso8601) < (now - 172800)) | .id' caches.json | tr -d '\r' | while read cache_id; do
             if [ -n "$cache_id" ]; then
               echo "Deleting old cache ID $cache_id (older than 2 days)..."
               gh api --method DELETE -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" repos/${{ github.repository }}/actions/caches/$cache_id || true
